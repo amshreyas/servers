@@ -1,12 +1,1 @@
-{
-  "servers": [
-    {
-      "id": 1,
-      "serverName": "Name"
-    },
-    {
-      "id": 2,
-      "serverName": "name2"
-    }
-  ]
-}
+{"servers":[{"id":1,"serverName":"Name"},{"id":2,"serverName":"shreyas"}]}
