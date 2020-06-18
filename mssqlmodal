@@ -209,9 +209,10 @@ async function SelectStructure() {
     const Columns = result.recordset.map((res) => res.Column).join(",");
     selectStructure = `${selectStructure} 
     const Query = "Select ${Columns} from  ${tableset[tbl].TableName}";
-    const result: Array<${tableset[tbl].TableName}> = await connection.query(Query);
+    const result = await connection.query(Query);
+    let returnValue : Array<${tableset[tbl].TableName}>  = result.recordset;
     await connection.close();
-    return result;
+    return returnValue;
     }catch(err) {
       console.log(err);
     }}`;
