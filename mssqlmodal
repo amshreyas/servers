@@ -1,0 +1,331 @@
+const sql = require("mssql");
+let tableset;
+async function GenerateDataModel() {
+  try {
+    // make sure that any items are correctly URL encoded in the connection string
+    await sql.connect("mssql://sa:Epicor123@10.63.3.67/Megaportal");
+    const zeusTables = `SELECT TABLE_NAME as TableName
+                        FROM INFORMATION_SCHEMA.TABLES
+                        WHERE TABLE_NAME like '%Zeus%' AND TABLE_CATALOG='Megaportal'`;
+    const tableNames = await sql.query(zeusTables);
+    tableset = tableNames.recordset;
+    let modelStructure = `import * as mssql from "mssql"; const connection = new mssql.ConnectionPool({
+      server: "10.63.3.67",
+      database: "Megaportal",
+      user: "sa",
+      password: "Epicor123",
+      options: { trustedConnection: true },
+    });`;
+    for (let tbl = 0; tbl < tableNames.recordset.length; tbl++) {
+      const result = await sql.query(`SELECT 
+                                                                    c.name 'Column',
+                                                                    t.Name 'Datatype',
+                                                                    c.max_length 'Max Length',
+                                                                    ISNULL(i.is_primary_key, 0) 'PrimaryKey'
+                                                                    FROM    
+                                                                        sys.columns c
+                                                                    INNER JOIN 
+                                                                        sys.types t ON c.user_type_id = t.user_type_id
+                                                                    LEFT OUTER JOIN 
+                                                                        sys.index_columns ic ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                                                                    LEFT OUTER JOIN 
+                                                                        sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                                                                    WHERE
+                                                                    c.object_id = OBJECT_ID('${tableNames.recordset[tbl].TableName}')`);
+      modelStructure = `${modelStructure} export class ${tableNames.recordset[tbl].TableName} { `;
+      for (let cl = 0; cl < result.recordset.length; cl++) {
+        const colVal = `public ${
+          result.recordset[cl].Column
+        }?: ${returnDataType(result.recordset[cl]["Datatype"])};`;
+        modelStructure = `${modelStructure} ${colVal}`;
+      }
+      modelStructure = `${modelStructure}}`;
+      const fs = require("fs");
+      const path = require("path");
+      if (
+        fs.existsSync(
+          path.resolve(
+            __dirname + `/./${tableNames.recordset[tbl].TableName}.ts`
+          )
+        )
+      ) {
+        fs.truncateSync(
+          path.resolve(
+            __dirname + `/./${tableNames.recordset[tbl].TableName}.ts`
+          )
+        );
+      }
+      fs.writeFileSync(
+        path.resolve(
+          __dirname + `/./${tableNames.recordset[tbl].TableName}.ts`
+        ),
+        modelStructure
+      );
+      modelStructure = `import * as mssql from "mssql"; const connection = new mssql.ConnectionPool({
+        server: "10.63.3.67",
+        database: "Megaportal",
+        user: "sa",
+        password: "Epicor123",
+        options: { trustedConnection: true },
+      });`;
+    }
+  } catch (err) {
+    console.log(err);
+  }
+}
+
+function returnDataType(dataType) {
+  let retVal = "";
+  if (dataType === "nvarchar" || dataType === "varchar") {
+    return "string";
+  }
+  if (
+    dataType === "bigint" ||
+    dataType === "long" ||
+    dataType === "int" ||
+    dataType === "decimal"
+  ) {
+    return "number";
+  }
+  if (dataType === "bit") {
+    return "boolean";
+  }
+  if (dataType === "datetime") {
+    return "Date";
+  } else {
+    return "any";
+  }
+}
+
+async function AppendEnums() {
+  for (let tbl = 0; tbl < tableset.length; tbl++) {
+    const result = await sql.query(`SELECT 
+                                                                  c.name 'Column',
+                                                                  t.Name 'Datatype',
+                                                                  c.max_length 'Max Length',
+                                                                  ISNULL(i.is_primary_key, 0) 'PrimaryKey'
+                                                                  FROM    
+                                                                      sys.columns c
+                                                                  INNER JOIN 
+                                                                      sys.types t ON c.user_type_id = t.user_type_id
+                                                                  LEFT OUTER JOIN 
+                                                                      sys.index_columns ic ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                                                                  LEFT OUTER JOIN 
+                                                                      sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                                                                  WHERE
+                                                                  c.object_id = OBJECT_ID('${tableset[tbl].TableName}')`);
+    let enumStructure = `export enum ${tableset[tbl].TableName}Columns { 
+
+                      `;
+    for (let cl = 0; cl < result.recordset.length; cl++) {
+      const colVal = `${result.recordset[cl].Column}= "${result.recordset[cl].Column}",`;
+      enumStructure = `${enumStructure} ${colVal}`;
+    }
+    enumStructure = `${enumStructure}}`;
+    const fs = require("fs");
+    const path = require("path");
+    fs.appendFileSync(
+      path.resolve(__dirname + `/./${tableset[tbl].TableName}.ts`),
+      enumStructure
+    );
+    enumStructure = "";
+    // });
+  }
+}
+
+async function InsertStructure() {
+  for (let tbl = 0; tbl < tableset.length; tbl++) {
+    const result = await sql.query(`SELECT 
+                                                                  c.name 'Column',
+                                                                  t.Name 'Datatype',
+                                                                  c.max_length 'Max Length',
+                                                                  ISNULL(i.is_primary_key, 0) 'PrimaryKey'
+                                                                  FROM    
+                                                                      sys.columns c
+                                                                  INNER JOIN 
+                                                                      sys.types t ON c.user_type_id = t.user_type_id
+                                                                  LEFT OUTER JOIN 
+                                                                      sys.index_columns ic ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                                                                  LEFT OUTER JOIN 
+                                                                      sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                                                                  WHERE
+                                                                  c.object_id = OBJECT_ID('${tableset[tbl].TableName}')`);
+    let insertStructure = `export async function Insert${tableset[tbl].TableName}Data (values: ${tableset[tbl].TableName}) {
+      try{
+      await connection.connect();`;
+    const Columns = result.recordset
+      .map((res) => res.Column)
+      .filter((e) => e !== "row_num")
+      .filter((e) => e !== "time_stamp")
+      .join(",");
+    let colVal = ""; //`"+values.${result.recordset[0]}+",`;
+    for (let cl = 0; cl < result.recordset.length; cl++) {
+      if (
+        result.recordset[cl].Column !== "row_num" &&
+        result.recordset[cl].Column !== "time_stamp"
+      ) {
+        colVal = `${colVal} "+(values.${result.recordset[cl].Column} || null)+",`;
+      }
+    }
+    colVal = colVal.substring(0, colVal.length - 1);
+    insertStructure = `${insertStructure} 
+    const Query = "Insert into ${tableset[tbl].TableName}(${Columns}) Values (${colVal})";
+    const result = await connection.query(Query);
+    await connection.close();
+    }catch(err) {
+      console.log(err);
+    }}`;
+    const fs = require("fs");
+    const path = require("path");
+    fs.appendFileSync(
+      path.resolve(__dirname + `/./${tableset[tbl].TableName}.ts`),
+      insertStructure
+    );
+    insertStructure = "";
+    // });
+  }
+}
+
+async function SelectStructure() {
+  for (let tbl = 0; tbl < tableset.length; tbl++) {
+    const result = await sql.query(`SELECT 
+                                                                  c.name 'Column',
+                                                                  t.Name 'Datatype',
+                                                                  c.max_length 'Max Length',
+                                                                  ISNULL(i.is_primary_key, 0) 'PrimaryKey'
+                                                                  FROM    
+                                                                      sys.columns c
+                                                                  INNER JOIN 
+                                                                      sys.types t ON c.user_type_id = t.user_type_id
+                                                                  LEFT OUTER JOIN 
+                                                                      sys.index_columns ic ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                                                                  LEFT OUTER JOIN 
+                                                                      sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                                                                  WHERE
+                                                                  c.object_id = OBJECT_ID('${tableset[tbl].TableName}')`);
+    let selectStructure = `export async function Select${tableset[tbl].TableName}Data() {
+      try{
+      await connection.connect();`;
+    const Columns = result.recordset.map((res) => res.Column).join(",");
+    selectStructure = `${selectStructure} 
+    const Query = "Select ${Columns} from  ${tableset[tbl].TableName}";
+    const result: Array<${tableset[tbl].TableName}> = await connection.query(Query);
+    await connection.close();
+    return result;
+    }catch(err) {
+      console.log(err);
+    }}`;
+    const fs = require("fs");
+    const path = require("path");
+    fs.appendFileSync(
+      path.resolve(__dirname + `/./${tableset[tbl].TableName}.ts`),
+      selectStructure
+    );
+    selectStructure = "";
+    // });
+  }
+}
+
+async function SelectStructureByID() {
+  for (let tbl = 0; tbl < tableset.length; tbl++) {
+    const result = await sql.query(`SELECT 
+                                                                  c.name 'Column',
+                                                                  t.Name 'Datatype',
+                                                                  c.max_length 'Max Length',
+                                                                  ISNULL(i.is_primary_key, 0) 'PrimaryKey'
+                                                                  FROM    
+                                                                      sys.columns c
+                                                                  INNER JOIN 
+                                                                      sys.types t ON c.user_type_id = t.user_type_id
+                                                                  LEFT OUTER JOIN 
+                                                                      sys.index_columns ic ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                                                                  LEFT OUTER JOIN 
+                                                                      sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                                                                  WHERE
+                                                                  c.object_id = OBJECT_ID('${tableset[tbl].TableName}')`);
+    let selectStructure = `export async function Select${tableset[tbl].TableName}DataByID(values: ${tableset[tbl].TableName}) {
+      try{
+      await connection.connect();`;
+    const Columns = result.recordset.map((res) => res.Column).join(",");
+    selectStructure = `${selectStructure} 
+    const Query = "Select ${Columns} from  ${tableset[tbl].TableName} where row_num = "+values.row_num+"";
+    const result: Array<${tableset[tbl].TableName}> = await connection.query(Query);
+    await connection.close();
+    return result;
+    }catch(err) {
+      console.log(err);
+    }}`;
+    const fs = require("fs");
+    const path = require("path");
+    fs.appendFileSync(
+      path.resolve(__dirname + `/./${tableset[tbl].TableName}.ts`),
+      selectStructure
+    );
+    selectStructure = "";
+    // });
+  }
+}
+
+async function UpdateStructure() {
+  for (let tbl = 0; tbl < tableset.length; tbl++) {
+    const result = await sql.query(`SELECT 
+                                                                  c.name 'Column',
+                                                                  t.Name 'Datatype',
+                                                                  c.max_length 'Max Length',
+                                                                  ISNULL(i.is_primary_key, 0) 'PrimaryKey'
+                                                                  FROM    
+                                                                      sys.columns c
+                                                                  INNER JOIN 
+                                                                      sys.types t ON c.user_type_id = t.user_type_id
+                                                                  LEFT OUTER JOIN 
+                                                                      sys.index_columns ic ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                                                                  LEFT OUTER JOIN 
+                                                                      sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                                                                  WHERE
+                                                                  c.object_id = OBJECT_ID('${tableset[tbl].TableName}')`);
+    let UpdateStructure = `export async function Update${tableset[tbl].TableName}Data (values: ${tableset[tbl].TableName}) {
+      try{
+      await connection.connect();`;
+    let updateQuery = `Update ${tableset[tbl].TableName} set `;
+    // const Columns = result.recordset
+    //   .map((res) => res.Column)
+    //   .filter((e) => e !== "row_num")
+    //   .filter((e) => e !== "time_stamp")
+    //   .join(",");
+    let colVal = ""; //`"+values.${result.recordset[0]}+",`;
+    for (let cl = 0; cl < result.recordset.length; cl++) {
+      if (
+        result.recordset[cl].Column !== "row_num" &&
+        result.recordset[cl].Column !== "time_stamp"
+      ) {
+        updateQuery = ` ${updateQuery} ${result.recordset[cl].Column} = "+(values.${result.recordset[cl].Column} || null)+",`;
+        // colVal = `${colVal} "+values.${result.recordset[cl].Column}+",`;
+      }
+    }
+    updateQuery = updateQuery.substring(0, updateQuery.length - 1);
+    UpdateStructure = `${UpdateStructure} 
+    const Query = "${updateQuery} Where row_num = "+values.row_num+"";
+    const result = await connection.query(Query);
+    await connection.close();
+    }catch(err) {
+      console.log(err);
+    }}`;
+    const fs = require("fs");
+    const path = require("path");
+    fs.appendFileSync(
+      path.resolve(__dirname + `/./${tableset[tbl].TableName}.ts`),
+      UpdateStructure
+    );
+    UpdateStructure = "";
+    // });
+  }
+}
+
+(async () => {
+  await GenerateDataModel();
+  await AppendEnums();
+  await InsertStructure();
+  await SelectStructure();
+  await SelectStructureByID();
+  await UpdateStructure();
+})();
